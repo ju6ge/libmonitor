@@ -1,0 +1,27 @@
+[package]
+name = "libmonitor"
+description = "A cross platform library to enable communication with VESA compliant monitors"
+version = "0.1.0"
+keywords = ["ddc", "mccs", "vcp", "vesa", "monitor"]
+edition = "2021"
+authors = [
+    "ju6ge <judge@felixrichter.tech>"
+]
+readme = "README.md"
+repository = "https://github.com/ju6ge/libmonitor"
+license-file = "LICENSE"
+
+[package.metadata.release]
+tag-name = "{{version}}"
+publish = false
+
+
+[dependencies]
+anyhow = "1.0.83"
+log = "0.4.21"
+nom = "7.1.3"
+thiserror = "1.0.60"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+udev = "0.8.0"
+i2cdev = "0.6.0"
