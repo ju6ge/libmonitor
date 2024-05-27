@@ -2,6 +2,9 @@ use std::fmt::Debug;
 
 use thiserror::Error;
 
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
+
 /// VCP feature code
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VcpFeatureCode {
@@ -242,6 +245,7 @@ impl VcpCapability {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum OsdLanguages {
     Ignored,
     ChineseTraditional,
@@ -384,6 +388,7 @@ impl VcpValue for OsdLanguages {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum InputSource {
     Analog1,
     Analog2,
