@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use thiserror::Error;
 
 #[cfg(feature = "serde")]
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// VCP feature code
 #[derive(Debug, Clone, Copy, PartialEq)]

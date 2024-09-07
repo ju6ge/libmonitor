@@ -1,5 +1,4 @@
 /// Example setting all monitors to maximum brighness
-
 use libmonitor::Monitor;
 
 fn main() {

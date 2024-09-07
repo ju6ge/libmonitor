@@ -53,7 +53,7 @@ pub enum DdcCiError {
     #[error("DDC/CI Protocol Error! {0}")]
     ProtocolError(#[from] DdcCiProtocolError),
     #[error("DDC/CI unexpected ReplyCode")]
-    UnexpectedReplyCode
+    UnexpectedReplyCode,
 }
 
 /// implement this trait to enable usage of auto implemented ddc functions for you device
@@ -157,7 +157,10 @@ where
                 .map_err(|err| DdcCiError::ProtocolError(err))?;
             retry -= 1;
         }
-        if get_vcp_reply.get_opcode().is_some_and(|opcode| *opcode == DdcOpcode::VcpReply) {
+        if get_vcp_reply
+            .get_opcode()
+            .is_some_and(|opcode| *opcode == DdcOpcode::VcpReply)
+        {
             let (_, vcp_resp) = parse_feature_reply(get_vcp_reply.get_data()).map_err(|err| {
                 println!("{get_vcp_reply:#x?}");
                 DdcCiError::ProtocolError(err.into())
