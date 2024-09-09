@@ -1,7 +1,7 @@
 [package]
 name = "libmonitor"
 description = "A cross platform library to enable communication with VESA compliant monitors"
-version = "0.1.1"
+version = "0.1.2"
 keywords = ["ddc", "mccs", "vcp", "vesa", "monitor"]
 edition = "2021"
 authors = [
