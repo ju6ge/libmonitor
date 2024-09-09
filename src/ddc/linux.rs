@@ -6,7 +6,7 @@ use std::{ffi::OsStr, fs::File, io::Read, path::Path, time::Duration};
 use udev::Device;
 
 use super::{
-    eddc::EDID_ADDRESS,
+    eddc::{EDDC_SEGMENT_POINTER_ADDR, EDID_ADDRESS},
     edid::{parse_edid, Edid},
     Ddc, DdcCiError, DdcCommunicationBase, DdcDevice, DeriveDdcCiDevice,
 };
@@ -14,12 +14,18 @@ use super::{
 /// this function only reads the first 128 of edid, this
 /// can be reasonably assumed to be present on all display devices
 pub fn receive_edid(i2c_bus: &mut LinuxI2CBus) -> Result<Edid, anyhow::Error> {
-    let mut data: [u8; 128] = [0; 128];
-    // this transfer is not bundeld with the rest because it will fail more quickly for i2c bus that are not connected to a display
+    // reset eddc segment pointer. May fail if display does not implement eddc for specific input
+    // some displays behave differently depending on the input source.
+    let _ = i2c_bus
+        .transfer(&mut [i2cdev::linux::LinuxI2CMessage::write(&[0x0])
+            .with_address(EDDC_SEGMENT_POINTER_ADDR.into())]);
+    //initiate edid reading
     i2c_bus
         .transfer(&mut [i2cdev::linux::LinuxI2CMessage::write(&[0x0])
             .with_address(EDID_ADDRESS.into())])
         .map_err(|err| anyhow::Error::new(err))?;
+    //read first 128 bytes of edid
+    let mut data: [u8; 128] = [0; 128];
     let _ = i2c_bus
         .transfer(&mut [
             i2cdev::linux::LinuxI2CMessage::read(&mut data).with_address(EDID_ADDRESS.into()),
