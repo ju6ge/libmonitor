@@ -11,6 +11,8 @@ use super::{
     Ddc, DdcCiError, DdcCommunicationBase, DdcDevice, DeriveDdcCiDevice,
 };
 
+const RECEIVE_EDID_RETRIES: u8 = 3;
+
 /// this function only reads the first 128 of edid, this
 /// can be reasonably assumed to be present on all display devices
 pub fn receive_edid(i2c_bus: &mut LinuxI2CBus) -> Result<Edid, anyhow::Error> {
@@ -19,19 +21,31 @@ pub fn receive_edid(i2c_bus: &mut LinuxI2CBus) -> Result<Edid, anyhow::Error> {
     let _ = i2c_bus
         .transfer(&mut [i2cdev::linux::LinuxI2CMessage::write(&[0x0])
             .with_address(EDDC_SEGMENT_POINTER_ADDR.into())]);
-    //initiate edid reading
-    i2c_bus
-        .transfer(&mut [i2cdev::linux::LinuxI2CMessage::write(&[0x0])
-            .with_address(EDID_ADDRESS.into())])
-        .map_err(|err| anyhow::Error::new(err))?;
-    //read first 128 bytes of edid
-    let mut data: [u8; 128] = [0; 128];
-    let _ = i2c_bus
-        .transfer(&mut [
-            i2cdev::linux::LinuxI2CMessage::read(&mut data).with_address(EDID_ADDRESS.into()),
-        ])
-        .map_err(|err| anyhow::Error::new(err))?;
-    parse_edid(&data).map_err(|err| anyhow::Error::new(err))
+
+    let mut receive_try = RECEIVE_EDID_RETRIES;
+    loop {
+        //initiate edid reading
+        i2c_bus
+            .transfer(&mut [i2cdev::linux::LinuxI2CMessage::write(&[0x0])
+                .with_address(EDID_ADDRESS.into())])
+            .map_err(|err| anyhow::Error::new(err))?;
+        //read first 128 bytes of edid
+        let mut data: [u8; 128] = [0; 128];
+        let _ = i2c_bus
+            .transfer(&mut [
+                i2cdev::linux::LinuxI2CMessage::read(&mut data).with_address(EDID_ADDRESS.into()),
+            ])
+            .map_err(|err| anyhow::Error::new(err))?;
+        let x = parse_edid(&data).map_err(|err| anyhow::Error::new(err));
+        if receive_try == 0 {
+            return x;
+        } else {
+            receive_try -= 1;
+            if x.is_ok() {
+                return x;
+            }
+        }
+    }
 }
 
 // filter phantom devices, devices connected via docking stations may appear as two seperate
@@ -120,30 +134,33 @@ fn find_parent_drm_device(i2c_dev: &udev::Device) -> Option<Device> {
 
                 let mut i2c =
                     LinuxI2CBus::new(format!("/dev/i2c-{}", i2c_dev.sysnum().unwrap())).unwrap();
-                if let Ok(i2c_edid) = receive_edid(&mut i2c) {
-                    let mut drm_enum = udev::Enumerator::new().unwrap();
-                    drm_enum.match_subsystem("drm").ok();
-                    let devices = drm_enum.scan_devices().unwrap();
+                match receive_edid(&mut i2c) {
+                    Ok(i2c_edid) => {
+                        let mut drm_enum = udev::Enumerator::new().unwrap();
+                        drm_enum.match_subsystem("drm").ok();
+                        let devices = drm_enum.scan_devices().unwrap();
 
-                    for (drm_device, edid_data) in devices.filter_map(|dev| {
-                        // only consider drm devices
-                        let edid_path = dev.syspath().join("edid");
-                        let mut edid_data = [0 as u8; 128];
-                        if edid_path.exists()
-                            && File::open(&edid_path)
-                                .unwrap()
-                                .read(&mut edid_data)
-                                .is_ok_and(|size| size > 0)
-                        {
-                            Some((dev, edid_data))
-                        } else {
-                            None
-                        }
-                    }) {
-                        if parse_edid(&edid_data).is_ok_and(|drm_edid| drm_edid == i2c_edid) {
-                            return Some(drm_device);
+                        for (drm_device, edid_data) in devices.filter_map(|dev| {
+                            // only consider drm devices
+                            let edid_path = dev.syspath().join("edid");
+                            let mut edid_data = [0 as u8; 128];
+                            if edid_path.exists()
+                                && File::open(&edid_path)
+                                    .unwrap()
+                                    .read(&mut edid_data)
+                                    .is_ok_and(|size| size > 0)
+                            {
+                                Some((dev, edid_data))
+                            } else {
+                                None
+                            }
+                        }) {
+                            if parse_edid(&edid_data).is_ok_and(|drm_edid| drm_edid == i2c_edid) {
+                                return Some(drm_device);
+                            }
                         }
                     }
+                    Err(_err) => { /*println!("{err:#?}");*/ }
                 };
             }
         }
