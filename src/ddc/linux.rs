@@ -18,22 +18,22 @@ const RECEIVE_EDID_RETRIES: u8 = 3;
 pub fn receive_edid(i2c_bus: &mut LinuxI2CBus) -> Result<Edid, anyhow::Error> {
     // reset eddc segment pointer. May fail if display does not implement eddc for specific input
     // some displays behave differently depending on the input source.
-    let _ = i2c_bus
-        .transfer(&mut [i2cdev::linux::LinuxI2CMessage::write(&[0x0])
-            .with_address(EDDC_SEGMENT_POINTER_ADDR.into())]);
+    let _ = i2c_bus.transfer(&mut [i2cdev::linux::LinuxI2CMessage::write(&[0x0])
+        .with_address(EDDC_SEGMENT_POINTER_ADDR.into())]);
 
     let mut receive_try = RECEIVE_EDID_RETRIES;
     loop {
         //initiate edid reading
         i2c_bus
-            .transfer(&mut [i2cdev::linux::LinuxI2CMessage::write(&[0x0])
-                .with_address(EDID_ADDRESS.into())])
+            .transfer(&mut [
+                i2cdev::linux::LinuxI2CMessage::write(&[0x0]).with_address(EDID_ADDRESS.into())
+            ])
             .map_err(|err| anyhow::Error::new(err))?;
         //read first 128 bytes of edid
         let mut data: [u8; 128] = [0; 128];
         let _ = i2c_bus
             .transfer(&mut [
-                i2cdev::linux::LinuxI2CMessage::read(&mut data).with_address(EDID_ADDRESS.into()),
+                i2cdev::linux::LinuxI2CMessage::read(&mut data).with_address(EDID_ADDRESS.into())
             ])
             .map_err(|err| anyhow::Error::new(err))?;
         let x = parse_edid(&data).map_err(|err| anyhow::Error::new(err));

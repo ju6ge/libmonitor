@@ -1,3 +1,5 @@
+pub mod queue;
+
 use std::fmt::Debug;
 
 use thiserror::Error;
@@ -5,26 +7,54 @@ use thiserror::Error;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::ddc::{DdcCiDevice, DdcError};
+
 /// VCP feature code
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VcpFeatureCode {
+    /// doubles as return value of ActiveControl when FIFO is empty
+    CodePage,
+    NewControlValue,
     Luminance,
     Contrast,
+    ActiveControl,
     OsdLanguage,
     InputSelect,
-    VendorSpecific(u8),
+    //VendorSpecific(u8),
     Unimplemented(u8),
     Unknown,
+}
+
+impl VcpValue for VcpFeatureCode {
+    fn vcp_feature() -> VcpFeatureCode {
+        VcpFeatureCode::ActiveControl
+    }
+}
+
+impl From<VcpFeatureCode> for u32 {
+    fn from(value: VcpFeatureCode) -> Self {
+        let vl: u8 = value.into();
+        vl as u32
+    }
+}
+
+impl From<u32> for VcpFeatureCode {
+    fn from(value: u32) -> Self {
+        ((value & 0xff) as u8).into()
+    }
 }
 
 impl From<VcpFeatureCode> for u8 {
     fn from(value: VcpFeatureCode) -> Self {
         match value {
+            VcpFeatureCode::CodePage => 0x00,
+            VcpFeatureCode::NewControlValue => 0x02,
             VcpFeatureCode::Luminance => 0x10,
             VcpFeatureCode::Contrast => 0x12,
+            VcpFeatureCode::ActiveControl => 0x52,
             VcpFeatureCode::InputSelect => 0x60,
             VcpFeatureCode::OsdLanguage => 0xcc,
-            VcpFeatureCode::VendorSpecific(val) => val,
+            //VcpFeatureCode::VendorSpecific(val) => val,
             VcpFeatureCode::Unimplemented(val) => val,
             VcpFeatureCode::Unknown => 0x00,
         }
@@ -34,11 +64,61 @@ impl From<VcpFeatureCode> for u8 {
 impl From<u8> for VcpFeatureCode {
     fn from(value: u8) -> Self {
         match value {
+            0x00 => Self::CodePage,
+            0x02 => Self::NewControlValue,
             0x10 => Self::Luminance,
             0x12 => Self::Contrast,
+            0x52 => Self::ActiveControl,
             0x60 => Self::InputSelect,
             0xcc => Self::OsdLanguage,
             _ => Self::Unimplemented(value),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum VcpFeatureValue {
+    CodePage(u32),
+    NewControlValue(NewControlValue),
+    Luminance(LuminanceValue),
+    Contrast(ContrastValue),
+    Fifo(VcpFeatureCode),
+    OsdLanguage(OsdLanguages),
+    InputSelect(InputSource),
+    Unimplemented(u8, u32),
+}
+
+impl VcpFeatureValue {
+    pub fn read_from_ddc<D: DdcCiDevice>(ddc_channel: &mut D, feature: VcpFeatureCode) -> Result<Self, DdcError> {
+        match feature {
+            VcpFeatureCode::CodePage => {
+                todo!()
+            },
+            VcpFeatureCode::NewControlValue => {
+                let c: NewControlValue = ddc_channel.get_vcp_feature()?;
+                Ok(Self::NewControlValue(c))
+            },
+            VcpFeatureCode::Luminance => {
+                let l: LuminanceValue = ddc_channel.get_vcp_feature()?;
+                Ok(Self::Luminance(l))
+            },
+            VcpFeatureCode::Contrast => {
+                let c: ContrastValue = ddc_channel.get_vcp_feature()?;
+                Ok(Self::Contrast(c))
+            },
+            VcpFeatureCode::ActiveControl => {
+                todo!()
+            },
+            VcpFeatureCode::OsdLanguage => {
+                let l: OsdLanguages = ddc_channel.get_vcp_feature()?;
+                Ok(Self::OsdLanguage(l))
+            },
+            VcpFeatureCode::InputSelect => {
+                let v: InputSource = ddc_channel.get_vcp_feature()?;
+                Ok(Self::InputSelect(v))
+            },
+            VcpFeatureCode::Unimplemented(_) => unimplemented!("Can not read unimplemented feature Code"),
+            VcpFeatureCode::Unknown => panic!("Can not read unknow vcp feature!"),
         }
     }
 }
@@ -66,14 +146,59 @@ pub trait VcpValue: From<u32> + Into<u32> + Copy {
     fn vcp_feature() -> VcpFeatureCode;
 }
 
-pub type AnonymousVcpValue = u32;
+#[repr(transparent)]
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub struct AnonymousVcpValue(u32);
 impl VcpValue for AnonymousVcpValue {
     fn vcp_feature() -> VcpFeatureCode {
         VcpFeatureCode::Unknown
     }
 }
 
-#[derive(Clone, Copy)]
+impl From<u32> for AnonymousVcpValue {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
+}
+
+impl From<AnonymousVcpValue> for u32 {
+    fn from(value: AnonymousVcpValue) -> Self {
+        value.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub enum NewControlValue {
+    NewControlValuesPresent,
+    Finished
+}
+
+impl From<u32> for NewControlValue {
+    fn from(value: u32) -> Self {
+        match value & 0x0f {
+            0x01 => Self::Finished,
+            0x02 => Self::NewControlValuesPresent,
+            _ => { panic!("Read VCP New Control Value may on be of values 0x01 or 0x02 not {}", value & 0x0f ) }
+        }
+    }
+}
+
+impl From<NewControlValue> for u32 {
+    fn from(value: NewControlValue) -> Self {
+        match value {
+            NewControlValue::NewControlValuesPresent => 0x02,
+            NewControlValue::Finished => 0x01,
+        }
+    }
+}
+
+impl VcpValue for NewControlValue {
+    fn vcp_feature() -> VcpFeatureCode {
+        VcpFeatureCode::NewControlValue
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct LuminanceValue {
     pub max: u16,
     pub val: u16,
@@ -97,7 +222,7 @@ impl VcpValue for LuminanceValue {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ContrastValue {
     pub max: u16,
     pub val: u16,

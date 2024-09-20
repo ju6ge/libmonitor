@@ -8,7 +8,7 @@ pub mod mccs;
 use ddc::{edid::Edid, Ddc, DdcError};
 use mccs::{
     capabilities::Capabilities,
-    features::{ContrastValue, InputSource, LuminanceValue, OsdLanguages},
+    features::{queue::VcpCodeUpdateQueue, ContrastValue, InputSource, LuminanceValue, OsdLanguages},
 };
 use std::{fmt::Display, io};
 use thiserror::Error;
@@ -94,6 +94,10 @@ where
                 mccs_features: None,
             },
         })
+    }
+
+    pub fn event_iter(&mut self) -> VcpCodeUpdateQueue<D> {
+       VcpCodeUpdateQueue::new(&mut self.handle)
     }
 
     /// get the currently active monitor input source

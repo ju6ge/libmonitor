@@ -42,6 +42,14 @@ pub enum DdcError {
     CommunicationError(#[from] DdcCiError),
     #[error("Unsupported Vcp Feature")]
     UnsupportedVcpFeature,
+    #[error("No Data: received null response")]
+    NullResponse,
+}
+
+impl DdcError {
+    pub fn is_null_response(&self) -> bool {
+        matches!(self, DdcError::NullResponse)
+    }
 }
 
 #[derive(Debug, Error)]
@@ -148,7 +156,7 @@ where
         let mut get_vcp_reply = DdcCiMessage::parse_buffer(&self.receive(get_vcp_request.addr())?)
             .map_err(|err| DdcCiError::ProtocolError(err))?;
 
-        let mut retry = 3;
+        let mut retry = 1;
         // if null message we need to retry after a timout
         while retry > 0 && get_vcp_reply == DdcCiMessage::NullResponse() {
             self.transmit(get_vcp_request.addr(), &get_vcp_request.transmit_buffer())?;
@@ -157,12 +165,16 @@ where
                 .map_err(|err| DdcCiError::ProtocolError(err))?;
             retry -= 1;
         }
-        if get_vcp_reply
+        // if there is still a null messsage this may indicate end of transmission
+        if get_vcp_reply == DdcCiMessage::NullResponse() {
+            Err(DdcError::NullResponse)
+        // otherwise this should be a vcp response
+        } else if get_vcp_reply
             .get_opcode()
             .is_some_and(|opcode| *opcode == DdcOpcode::VcpReply)
         {
             let (_, vcp_resp) = parse_feature_reply(get_vcp_reply.get_data()).map_err(|err| {
-                println!("{get_vcp_reply:#x?}");
+                //eprintln!("{get_vcp_reply:#x?}");
                 DdcCiError::ProtocolError(err.into())
             })?;
             if *vcp_resp.result_code() == ResultCode::UnsupportedCode {
@@ -170,6 +182,7 @@ where
             } else {
                 Ok(vcp_resp.vcp_data().into())
             }
+        // if not this is a protocol error
         } else {
             Err(DdcCiError::UnexpectedReplyCode.into())
         }
