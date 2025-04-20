@@ -50,14 +50,20 @@ pub fn receive_edid(i2c_bus: &mut LinuxI2CBus) -> Result<Edid, anyhow::Error> {
 
 // filter phantom devices, devices connected via docking stations may appear as two seperate
 // i2c devices with only one working (workarount copied from ddcutil)
-fn is_phantom_ddc_device(id: usize) -> bool {
+fn is_phantom_ddc_device(dev: &Device) -> bool {
     use std::{fs::File, io::Read};
+    let find_device_parent = dev.parent().and_then(|parent| parent.parent());
 
-    let device_path_prefix = Path::new("/sys/bus/i2c/devices");
-    let device_path = device_path_prefix.join(format!("i2c-{id}"));
+    if find_device_parent.is_none() {
+        // devices without any parents will be ignored
+        return true;
+    }
+
+    let device_parent = find_device_parent.unwrap();
+    let device_path = Path::new("/sys").join(format!(".{}", device_parent.devpath().to_string_lossy()));
     if device_path.exists() {
-        let enabled_path = device_path.join("device").join("enabled");
-        let status_path = device_path.join("device").join("status");
+        let enabled_path = device_path.join("enabled");
+        let status_path = device_path.join("status");
         if enabled_path.exists()
             && File::open(enabled_path)
                 .and_then(|mut f| {
@@ -263,7 +269,7 @@ impl LinuxDdcDeviceEnumerator {
                     .is_some_and(|name| !ignore_device_by_name(name))
             })
             .filter(|dev| device_is_display(dev))
-            .filter(|dev| dev.sysnum().is_some_and(|id| !is_phantom_ddc_device(id)))
+            .filter(|dev| !is_phantom_ddc_device(dev))
             .filter_map(|i2c_device| {
                 if let Some(drm_device) = find_parent_drm_device(&i2c_device) {
                     Some(LinuxDrmI2C {
